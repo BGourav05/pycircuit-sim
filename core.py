@@ -7,6 +7,7 @@ Returns node voltages (w.r.t. ground node named "0") and currents through voltag
 
 from typing import Dict, List
 import numpy as np
+import re
 
 class Element:
     pass
@@ -106,22 +107,97 @@ class Circuit:
 
         return {"nodes": node_volts, "vsrc_currents": vsrc_currents}
 
+# --- Netlist parsing utilities ---
+
+_SUFFIXES = {
+    'G': 1e9,
+    'MEG': 1e6,
+    'M': 1e6,
+    'K': 1e3,
+    'KILO': 1e3,
+    '': 1.0,
+    'm': 1e-3,
+    'u': 1e-6,
+    'µ': 1e-6,
+    'n': 1e-9,
+    'p': 1e-12,
+}
+
+def parse_value(tok: str) -> float:
+    """
+    Parse numeric token with optional SI suffixes like 1k, 2.2M, 5m, 10u, etc.
+    Falls back to float(tok) and raises ValueError if parsing fails.
+    """
+    tok = tok.strip()
+    # Try plain float first
+    try:
+        return float(tok)
+    except ValueError:
+        pass
+
+    # Normalize token: allow forms like "1k", "2.2k", "3.3M"
+    m = re.fullmatch(r'([-+]?[0-9]*\.?[0-9]+)([A-Za-zµ]*)', tok)
+    if not m:
+        raise ValueError(f"Unable to parse numeric value: '{tok}'")
+    number_str, suffix = m.group(1), m.group(2)
+    suffix = suffix.upper()
+    # Some suffix aliases
+    if suffix == 'U' or suffix == 'MICRO':
+        suffix = 'U'
+    # Handle common letter suffixes: K, M, G, m, u, n, p
+    mul = None
+    # Exact match first for uppercase dictionary
+    if suffix in _SUFFIXES:
+        mul = _SUFFIXES[suffix]
+    else:
+        # try single-letter mapping (case-sensitive)
+        if suffix.lower() in _SUFFIXES:
+            mul = _SUFFIXES[suffix.lower()]
+    if mul is None:
+        # Unknown suffix; raise
+        raise ValueError(f"Unknown suffix '{suffix}' in numeric token '{tok}'")
+    return float(number_str) * mul
+
 def parse_netlist_lines(lines: List[str]) -> Circuit:
+    """
+    Parse a list of netlist lines and return a Circuit object.
+
+    Accepts simple SPICE-like lines:
+      Rname node1 node2 value
+      Vname pos neg value
+
+    Parsing is tolerant of extra trailing tokens (they are ignored) and understands
+    common SI suffixes (e.g., 1k, 2.2M, 10u).
+    """
     c = Circuit()
     for raw in lines:
         s = raw.strip()
         if not s or s.startswith('*') or s.startswith(';'):
             continue
+        # Split by whitespace and ignore inline comments after a semicolon or '*'
         parts = s.split()
-        tag = parts[0].upper()
+        if len(parts) < 4:
+            raise ValueError(f"Malformed element line (expected at least 4 tokens): '{raw}'")
+        name = parts[0]
+        n1 = parts[1]
+        n2 = parts[2]
+        val_tok = parts[3]
+
+        tag = name.upper()
         if tag.startswith('R'):
-            _, n1, n2, val = parts
-            c.add_resistor(tag, n1, n2, float(val))
+            try:
+                val = parse_value(val_tok)
+            except ValueError as e:
+                raise ValueError(f"Invalid resistor value on line: '{raw}': {e}") from e
+            c.add_resistor(name, n1, n2, val)
         elif tag.startswith('V'):
-            _, pos, neg, val = parts
-            c.add_voltage_source(tag, pos, neg, float(val))
+            try:
+                val = parse_value(val_tok)
+            except ValueError as e:
+                raise ValueError(f"Invalid voltage source value on line: '{raw}': {e}") from e
+            c.add_voltage_source(name, n1, n2, val)
         else:
-            raise ValueError(f"Unknown element: {raw}")
+            raise ValueError(f"Unknown element type on line: '{raw}'")
     return c
 
 if __name__ == "__main__":
