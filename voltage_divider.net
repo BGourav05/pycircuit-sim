@@ -1,0 +1,4 @@
+* Voltage divider example
+V1 n2 0 5
+R1 n1 n2 1000
+R2 n1 0 2000

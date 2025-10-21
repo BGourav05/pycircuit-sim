@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pycircuit-sim"
+version = "0.1.0"
+description = "A lightweight, Python-based DC circuit simulator for education and experimentation."
+readme = "README.md"
+authors = [
+  { name = "Your Name", email = "you@example.com" }
+]
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+dependencies = ["numpy>=1.20"]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/pycircuit-sim"
+Issues = "https://github.com/yourusername/pycircuit-sim/issues"
